@@ -2,9 +2,8 @@
 #include "stat.h"
 #include "user.h"
 
-//tode
-int maxNum = 1024;
-char buf[1024];
+int maxNum = 4;
+char buf[3];
 
 struct Options {
     // 0 means standard output, 
@@ -50,39 +49,65 @@ int cmpByOption(int co, char* a, char* b) {
     }
 }
 
-int splitLines(char* buf, char** lines) {
+// return number of the lines in buf.
+// the last line is not counted, because we don't know if it is end.
+// Instead, the last line will be save in the char* rest
+int splitLines(char* buf, char** lines, char** rest) {
     int i = 0, lineCnt = 0, letterCnt = 0;
 
-    lines[0] = malloc(maxNum * sizeof(char));
+    // line[0] = rest + line[0] in buf
+    lines[0] = malloc((maxNum + strlen(*rest) + 1) * sizeof(char));
+    strcpy(lines[0], *rest);
+    letterCnt = strlen(*rest);
+
+    // split lines in bufs
     for(i=0; i<strlen(buf); i++) {
         if (buf[i] == '\n' || buf[i] == '\r') {
             lines[lineCnt][letterCnt] = '\0';
             lineCnt++;
             letterCnt = 0;
-            lines[lineCnt] = malloc(maxNum* sizeof(char));
+            lines[lineCnt] = malloc(maxNum * sizeof(char));
             continue;
         }
         lines[lineCnt][letterCnt] = buf[i];
         letterCnt++;
     }
     lines[lineCnt][letterCnt] = '\0';
-    return lineCnt+1;
+
+    // set last line to rest
+    free(*rest);
+    *rest = malloc((strlen(lines[lineCnt]) + 1) * sizeof(char));
+    strcpy(*rest, lines[lineCnt]);
+
+    return lineCnt;
 }
 
 void uniq(int fd, struct Options o) {
     int i, n, cnt = 0;
-    char *uniqBuf = malloc(maxNum * sizeof(char));
+    // uniqBuf records the first uniq line
+    char *uniqBuf = "";
+    int uniqBufInUse = 0;
+    // rest records the last line in the buf
+    char *rest = malloc(1 * sizeof(char));
+    char **lines = malloc(maxNum * sizeof(char*));
 
-    while((n = read(fd, buf, sizeof(buf))) > 0) {
-        char **lines = malloc(maxNum * sizeof(char*));
-        int lineCnt = splitLines(buf, lines);
-        if (lineCnt == 0){
-            exit();
+    while((n = read(fd, buf, sizeof(buf) - 1)) > 0) {
+        buf[n] = '\0';
+
+        int lineCnt = splitLines(buf, lines, &rest);
+
+        // if uniqBuf is not used, we set line[0] to uniqBuf, we compare from line[1].ßß
+        // if uniqBuf is used, it means it saves the uniqLine in the last iteration, we compare from line[0] this iteration.
+        int lineIndexToCmp = 1 - uniqBufInUse;
+        if (uniqBufInUse == 0 && lineCnt > 0) {
+            uniqBuf = malloc((strlen(lines[0]) + 1) * sizeof(char));
+            strcpy(uniqBuf, lines[0]);
+            cnt = 1;
+            uniqBufInUse = 1;
         }
-        
-        strcpy(uniqBuf, lines[0]);
-        cnt = 1;
-        for (i = 1; i < lineCnt; i++) {
+
+        // compare and count unique lines
+        for (i = lineIndexToCmp; i < lineCnt; i++) {
             if(cmpByOption(o.cmpOption, lines[i], uniqBuf) == 0) {
                 cnt++;
                 continue;
@@ -93,8 +118,15 @@ void uniq(int fd, struct Options o) {
             cnt = 1;
         }
     }
+
     // Print the last line
-    printfByOption(o.printOption, uniqBuf, cnt);
+    if(cmpByOption(o.cmpOption, rest, uniqBuf) == 0) {
+        cnt++;
+        printfByOption(o.printOption, uniqBuf, cnt);
+    } else {
+        printfByOption(o.printOption, uniqBuf, cnt);
+        printfByOption(o.printOption, rest, 1);
+    }
 }
 
 

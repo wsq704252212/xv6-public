@@ -1,8 +1,0 @@
-{
-    "files.associations": {
-        "cstdio": "c",
-        "user.h": "c",
-        "types.h": "c",
-        "stat.h": "c"
-    }
-}

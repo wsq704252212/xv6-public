@@ -7,9 +7,17 @@
 #include "proc.h"
 #include "spinlock.h"
 
+/* TODO priority queue
+struct plink {
+  struct proc p;
+  struct plink *next;
+};
+*/
+
 struct {
   struct spinlock lock;
   struct proc proc[NPROC];
+  struct plink *pl[40];
 } ptable;
 
 static struct proc *initproc;
@@ -49,6 +57,7 @@ allocproc(void)
 found:
   p->state = EMBRYO;
   p->pid = nextpid++;
+  p->priority = 0;
 
   release(&ptable.lock);
 
@@ -287,25 +296,31 @@ scheduler(void)
 
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
+
+    struct proc *highestProc;
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
       if(p->state != RUNNABLE)
         continue;
 
-      // Switch to chosen process.  It is the process's job
-      // to release ptable.lock and then reacquire it
-      // before jumping back to us.
-      proc = p;
-      switchuvm(p);
-      p->state = RUNNING;
-      swtch(&cpu->scheduler, p->context);
-      switchkvm();
-
-      // Process is done running for now.
-      // It should have changed its p->state before coming back.
-      proc = 0;
+      if(p->priority < highestProc->priority) {
+        highestProc = p;
+      }
     }
-    release(&ptable.lock);
 
+    // Switch to chosen process.  It is the process's job
+    // to release ptable.lock and then reacquire it
+    // before jumping back to us.
+    proc = highestProc;
+    switchuvm(highestProc);
+    highestProc->state = RUNNING;
+    swtch(&cpu->scheduler, highestProc->context);
+    switchkvm();
+
+    // Process is done running for now.
+    // It should have changed its p->state before coming back.
+    proc = 0;
+
+    release(&ptable.lock);
   }
 }
 
@@ -482,4 +497,28 @@ procdump(void)
     }
     cprintf("\n");
   }
+}
+
+// adds inc to the priority value for the calling process.
+// the priority is in the range [-20, 19], a lower number means higher priority
+int
+nice (int inc) {
+
+    int prty = proc->priority;
+    prty = prty + inc;
+
+    // set a nice value outside the range are
+    // clamped to the range
+    if (prty > 19) {
+        prty = 19;
+    }
+    if (prty < -20) {
+        prty = -20;
+    }
+
+    acquire(&ptable.lock);
+
+    proc->priority = prty;
+
+    release(&ptable.lock);
 }

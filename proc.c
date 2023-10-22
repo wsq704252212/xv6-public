@@ -49,6 +49,7 @@ allocproc(void)
 found:
   p->state = EMBRYO;
   p->pid = nextpid++;
+  p->priority = 0;
 
   release(&ptable.lock);
 
@@ -280,32 +281,61 @@ void
 scheduler(void)
 {
   struct proc *p;
+  int i;
 
   for(;;){
     // Enable interrupts on this processor.
     sti();
 
+    int isRunned[NPROC] = {0};
+
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
-    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(p->state != RUNNABLE)
-        continue;
+    
+    // one scheduling turn
+    for(i = 0; i < NPROC; i++) {
+      int runableHighestPriority = 20;
+      struct proc *procToRun = 0;
+
+      for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+        if(p->state == RUNNABLE && p->priority < runableHighestPriority) {
+          runableHighestPriority = p->priority;
+        }
+      }
+
+      // no runable process, next turn
+      if (runableHighestPriority == 20) break;
+
+      // for the fairness among runable highest processes
+      // A runable highest process can be runnd one time in one turn.
+      for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+        int index = p - ptable.proc;
+        if(p->state == RUNNABLE && p->priority == runableHighestPriority && isRunned[index] == 0) {
+          procToRun = p;
+          isRunned[index] = 1;
+          break;
+        }
+      }
+
+      // Runable processes with the highest processes exists, but they are runned in this turn.
+      // So we break and enter a new turn to run them.
+      if (procToRun == 0) break;
 
       // Switch to chosen process.  It is the process's job
       // to release ptable.lock and then reacquire it
       // before jumping back to us.
-      proc = p;
-      switchuvm(p);
-      p->state = RUNNING;
-      swtch(&cpu->scheduler, p->context);
+      proc = procToRun;
+      switchuvm(procToRun);
+      procToRun->state = RUNNING;
+      swtch(&cpu->scheduler, procToRun->context);
       switchkvm();
 
       // Process is done running for now.
       // It should have changed its p->state before coming back.
       proc = 0;
     }
-    release(&ptable.lock);
 
+    release(&ptable.lock);
   }
 }
 
@@ -482,4 +512,29 @@ procdump(void)
     }
     cprintf("\n");
   }
+}
+
+// adds inc to the priority value for the calling process.
+// the priority is in the range [-20, 19], a lower number means higher priority
+int
+nice (int inc) {
+
+  acquire(&ptable.lock);
+    
+  int prty = proc->priority;
+  prty = prty + inc;
+
+  // set a nice value outside the range are
+  // clamped to the range
+  if (prty > 19) {
+      prty = 19;
+  }
+  if (prty < -20) {
+      prty = -20;
+  }
+  proc->priority = prty;
+  cprintf("nice(): set proc: %d, priority: %d\n", proc->pid, proc->priority);
+
+  release(&ptable.lock);
+  return prty;
 }

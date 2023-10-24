@@ -6,6 +6,7 @@
 #include "x86.h"
 #include "proc.h"
 #include "spinlock.h"
+#include "prng.h"
 
 struct {
   struct spinlock lock;
@@ -186,6 +187,17 @@ fork(void)
 void
 exit(void)
 {
+  // a test of prng
+  // If you want see output, please uncomment it and execute prngtest command in xv6.
+  /*
+  int i;
+  struct xorshift32 rng;
+  xorshift32_init(&rng, 143);
+  for (i = 0; i < 5000; i++) {
+      cprintf("%d\n", xorshift32_next(&rng)%50);
+  }
+  */
+  
   struct proc *p;
   int fd;
 

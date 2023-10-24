@@ -35,6 +35,23 @@ printint(int fd, int xx, int base, int sgn)
     putc(fd, buf[i]);
 }
 
+static void
+printuint(int fd, uint xx, int base, int sgn)
+{
+  static char digits[] = "0123456789ABCDEF";
+  char buf[16];
+  int i;
+  uint x = xx;
+
+  i = 0;
+  do{
+    buf[i++] = digits[x % base];
+  }while((x /= base) != 0);
+
+  while(--i >= 0)
+    putc(fd, buf[i]);
+}
+
 // Print to the given fd. Only understands %d, %x, %p, %s.
 void
 printf(int fd, char *fmt, ...)
@@ -60,7 +77,10 @@ printf(int fd, char *fmt, ...)
       } else if(c == 'x' || c == 'p'){
         printint(fd, *ap, 16, 0);
         ap++;
-      } else if(c == 's'){
+      } else if(c == 'u'){
+        printuint(fd, *ap, 10, 1);
+        ap++;
+      }else if(c == 's'){
         s = (char*)*ap;
         ap++;
         if(s == 0)

@@ -9,6 +9,7 @@ struct spinlock;
 struct sleeplock;
 struct stat;
 struct superblock;
+struct xorshift32;
 
 // bio.c
 void            binit(void);
@@ -181,6 +182,10 @@ void            switchuvm(struct proc*);
 void            switchkvm(void);
 int             copyout(pde_t*, uint, void*, uint);
 void            clearpteu(pde_t *pgdir, char *uva);
+
+// prng.c
+void            xorshift32_init(struct xorshift32 *prng, uint seed);
+uint            xorshift32_next(struct xorshift32 *prng);
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))

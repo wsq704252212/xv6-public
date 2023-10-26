@@ -8,6 +8,14 @@
 #include "spinlock.h"
 #include "prng.h"
 
+// scheduler algorithm
+// 0 is round robin
+// 1 is lottery
+// SCHEDULER is assigned when compiling
+//       make scheduler=1
+// Please review gcc -DSCHEDULER in Makefile
+int scheAlgo = SCHEDULER;
+
 struct {
   struct spinlock lock;
   struct proc proc[NPROC];
@@ -25,6 +33,13 @@ void
 pinit(void)
 {
   initlock(&ptable.lock, "ptable");
+  if (scheAlgo == 0) {
+    cprintf("Scheduler: RoundRobin\n");
+  } else if (scheAlgo == 1) {
+    cprintf("Scheduler: Lottery\n");
+  } else {
+    cprintf("Warning: No scheduler is selected.\n");
+  }
 }
 
 //PAGEBREAK: 32
@@ -280,6 +295,34 @@ wait(void)
   }
 }
 
+void
+roundrobin(void) {
+  struct proc *p;
+
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->state != RUNNABLE)
+      continue;
+
+    // Switch to chosen process.  It is the process's job
+    // to release ptable.lock and then reacquire it
+    // before jumping back to us.
+    proc = p;
+    switchuvm(p);
+    p->state = RUNNING;
+    swtch(&cpu->scheduler, p->context);
+    switchkvm();
+
+    // Process is done running for now.
+    // It should have changed its p->state before coming back.
+    proc = 0;
+  }
+}
+
+void
+lottery(void) {
+
+}
+
 //PAGEBREAK: 42
 // Per-CPU process scheduler.
 // Each CPU calls scheduler() after setting itself up.
@@ -291,30 +334,16 @@ wait(void)
 void
 scheduler(void)
 {
-  struct proc *p;
-
   for(;;){
     // Enable interrupts on this processor.
     sti();
 
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
-    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(p->state != RUNNABLE)
-        continue;
-
-      // Switch to chosen process.  It is the process's job
-      // to release ptable.lock and then reacquire it
-      // before jumping back to us.
-      proc = p;
-      switchuvm(p);
-      p->state = RUNNING;
-      swtch(&cpu->scheduler, p->context);
-      switchkvm();
-
-      // Process is done running for now.
-      // It should have changed its p->state before coming back.
-      proc = 0;
+    if (scheAlgo == 0) {
+      roundrobin();
+    } else if (scheAlgo == 1) {
+      lottery();
     }
     release(&ptable.lock);
 

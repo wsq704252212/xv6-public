@@ -65,6 +65,7 @@ allocproc(void)
 found:
   p->state = EMBRYO;
   p->pid = nextpid++;
+  p->tickets = 1000;
 
   release(&ptable.lock);
 
@@ -319,8 +320,48 @@ roundrobin(void) {
 }
 
 void
-lottery(void) {
+lottery(struct xorshift32 *prng) {
+  struct proc *p;
+  int i, runableProcCnt = 0;
+  uint runnableTickets = 0;
+  struct proc *runableProc[NPROC];
 
+  // get all runnable processes and count tickets they have.
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->state != RUNNABLE)
+      continue;
+
+    runnableTickets = runnableTickets + p->tickets;
+    runableProc[runableProcCnt] = p;
+    runableProcCnt++;
+  }
+
+  if(runableProcCnt == 0 || runnableTickets == 0) return;
+
+  // generate a lottery and select the winner
+  uint lottery = xorshift32_next(prng) % runnableTickets;
+  uint currTickets = 0;
+  for(i = 0; i < runableProcCnt; i++){
+    p = runableProc[i];
+
+    currTickets = currTickets + p->tickets;
+    if (lottery < currTickets) {
+      break;
+    }
+  }
+
+  // Switch to chosen process.  It is the process's job
+  // to release ptable.lock and then reacquire it
+  // before jumping back to us.
+  proc = p;
+  switchuvm(p);
+  p->state = RUNNING;
+  swtch(&cpu->scheduler, p->context);
+  switchkvm();
+
+  // Process is done running for now.
+  // It should have changed its p->state before coming back.
+  proc = 0;
 }
 
 //PAGEBREAK: 42
@@ -334,6 +375,9 @@ lottery(void) {
 void
 scheduler(void)
 {
+  struct xorshift32 rng;
+  xorshift32_init(&rng, 12345);
+
   for(;;){
     // Enable interrupts on this processor.
     sti();
@@ -343,7 +387,7 @@ scheduler(void)
     if (scheAlgo == 0) {
       roundrobin();
     } else if (scheAlgo == 1) {
-      lottery();
+      lottery(&rng);
     }
     release(&ptable.lock);
 
@@ -523,4 +567,34 @@ procdump(void)
     }
     cprintf("\n");
   }
+}
+
+// set tickets for a process
+// each process has tickets between [1, 1000000]
+int
+setTickets(int pid, uint tickets) {
+  struct proc *p;
+
+  // each process must have at least one tickets
+  if(tickets == 0) {
+    tickets = 1;
+  } else if (tickets > 1000000) {
+    // to avoid overflow
+    tickets = 1000000;
+  }
+
+  acquire(&ptable.lock);
+
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
+    if(p->pid == pid) {
+      p->tickets = tickets;
+      break;
+    }
+  }
+
+  cprintf("process: %d has %u tickets\n", p->pid, p->tickets);
+
+  release(&ptable.lock);
+
+  return 0;
 }
